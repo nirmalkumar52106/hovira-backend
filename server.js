@@ -34,30 +34,29 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 
-const origins = (
-  process.env.CLIENT_URL || "*"
-)
-  .split(",")
-  .map((x) => x.trim().replace(/\/+$/, ""));
+
+const origins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://hovira-cosmetics.netlify.app",
+];
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (
-        !origin ||
-        origins.includes("*") ||
-        origins.includes(origin)
-      ) {
+      if (!origin || origins.includes(origin)) {
         return callback(null, true);
       }
 
-      return callback(new Error("CORS origin not allowed: " + origin));
+      console.error("Blocked CORS origin:", origin);
+      return callback(new Error("CORS origin not allowed"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   })
 );
+
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
