@@ -34,30 +34,9 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 
-const origins = (
-  process.env.CLIENT_URL || "http://localhost:5173"
-)
-  .split(",")
-  .map((x) => x.trim().replace(/\/+$/, ""));
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (
-        !origin ||
-        origins.includes("*") ||
-        origins.includes(origin)
-      ) {
-        return callback(null, true);
-      }
 
-      return callback(new Error("CORS origin not allowed: " + origin));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-  })
-);
+app.use(cors(origin = "*"))
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
