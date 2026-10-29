@@ -34,7 +34,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 
-const origins = (process.env.CLIENT_URL || 'http://localhost:5173')
+const origins = (process.env.CLIENT_URL || 'http://localhost:5173' || "*")
   .split(',')
   .map((x) => x.trim());
 
