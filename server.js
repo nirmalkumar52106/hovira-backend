@@ -34,7 +34,7 @@ const app = express();
 app.disable('x-powered-by');
 app.use(helmet());
 
-const origins = (process.env.CLIENT_URL || 'https://hovira-cosmetics.netlify.app/')
+const origins = ('*')
   .split(',')
   .map((x) => x.trim());
 
