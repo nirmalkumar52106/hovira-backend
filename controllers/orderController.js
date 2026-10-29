@@ -305,53 +305,154 @@ exports.adminListOrders = asyncHandler(async (req, res) => {
   const [orders, total] = await Promise.all([Order.find(filter).populate('customer', 'name email phone').sort({ createdAt: -1 }).skip(skip).limit(limit), Order.countDocuments(filter)]); res.json(paginated(orders, total, page, limit));
 });
 exports.adminGetOrder = asyncHandler(async (req, res) => { const order = await Order.findById(req.params.id).populate('customer', 'name email phone'); if (!order) return res.status(404).json({ message: 'Order not found.' }); res.json({ order }); });
+
 exports.adminUpdateOrder = asyncHandler(async (req, res) => {
+  const order = await Order.findById(req.params.id).populate(
+    "customer",
+    "name email phone"
+  );
 
-  const previousStatus = order.status;
-const previousPaymentStatus = order.paymentStatus;
-
- const order = await Order.findById(req.params.id)
-  .populate("customer", "name email phone");
-  const { status, paymentStatus, paymentReference, trackingNumber, carrier, adminNote } = req.body;
-  const validStatus = ['pending','confirmed','processing','shipped','delivered','cancelled','returned'];
-  const validPayment = ['pending','paid','failed','refunded','partially_refunded'];
-  if (status && !validStatus.includes(status)) return res.status(400).json({ message: 'Invalid order status.' });
-  if (paymentStatus && !validPayment.includes(paymentStatus)) return res.status(400).json({ message: 'Invalid payment status.' });
-  if (status && status !== order.status) {
-    if (order.status === 'delivered' || order.status === 'cancelled') return res.status(400).json({ message: 'Delivered/cancelled orders cannot be changed through this endpoint.' });
-    if (status === 'cancelled' && order.paymentStatus === 'paid') return res.status(400).json({ message: 'Paid order must be refunded through payment provider before cancellation.' });
-    if (status === 'cancelled') { for (const item of order.items) await Product.updateOne({ _id: item.product }, { $inc: { stock: item.quantity } }); order.cancelledAt = new Date(); }
-    if (status === 'delivered') order.deliveredAt = new Date();
-    order.status = status; order.statusHistory.push({ status, note: adminNote || `Status changed by ${req.admin.name}`, changedBy: req.admin._id });
+  if (!order) {
+    return res.status(404).json({ message: "Order not found." });
   }
+
+  // Order fetch hone ke baad hi previous values read karo
+  const previousStatus = order.status;
+  const previousPaymentStatus = order.paymentStatus;
+
+  const {
+    status,
+    paymentStatus,
+    paymentReference,
+    trackingNumber,
+    carrier,
+    adminNote,
+  } = req.body;
+
+  const validStatus = [
+    "pending",
+    "confirmed",
+    "processing",
+    "shipped",
+    "delivered",
+    "cancelled",
+    "returned",
+  ];
+
+  const validPayment = [
+    "pending",
+    "paid",
+    "failed",
+    "refunded",
+    "partially_refunded",
+  ];
+
+  if (status && !validStatus.includes(status)) {
+    return res.status(400).json({ message: "Invalid order status." });
+  }
+
+  if (paymentStatus && !validPayment.includes(paymentStatus)) {
+    return res.status(400).json({ message: "Invalid payment status." });
+  }
+
+  if (status && status !== order.status) {
+    if (["delivered", "cancelled"].includes(order.status)) {
+      return res.status(400).json({
+        message: "Delivered/cancelled orders cannot be changed through this endpoint.",
+      });
+    }
+
+    if (status === "cancelled" && order.paymentStatus === "paid") {
+      return res.status(400).json({
+        message: "Paid order must be refunded through payment provider before cancellation.",
+      });
+    }
+
+    if (status === "cancelled") {
+      for (const item of order.items) {
+        await Product.updateOne(
+          { _id: item.product },
+          { $inc: { stock: item.quantity } }
+        );
+      }
+
+      order.cancelledAt = new Date();
+    }
+
+    if (status === "delivered") {
+      order.deliveredAt = new Date();
+    }
+
+    order.status = status;
+
+    order.statusHistory.push({
+      status,
+      note: adminNote || `Status changed by ${req.admin.name}`,
+      changedBy: req.admin._id,
+    });
+  }
+
   if (paymentStatus) {
-    if (paymentStatus === 'paid' && order.paymentMethod !== 'cod' && !paymentReference) return res.status(400).json({ message: 'Provide a verified paymentReference after confirming payment with the gateway.' });
+    if (
+      paymentStatus === "paid" &&
+      order.paymentMethod !== "cod" &&
+      !paymentReference &&
+      !order.paymentReference
+    ) {
+      return res.status(400).json({
+        message: "A verified payment reference is required.",
+      });
+    }
+
     order.paymentStatus = paymentStatus;
   }
-  if (paymentReference !== undefined) order.paymentReference = paymentReference;
-  if (trackingNumber !== undefined) order.trackingNumber = trackingNumber;
-  if (carrier !== undefined) order.carrier = carrier;
-  if (adminNote !== undefined) order.adminNote = adminNote;
-  await order.save(); 
+
+  if (paymentReference !== undefined) {
+    order.paymentReference = paymentReference;
+  }
+
+  if (trackingNumber !== undefined) {
+    order.trackingNumber = trackingNumber;
+  }
+
+  if (carrier !== undefined) {
+    order.carrier = carrier;
+  }
+
+  if (adminNote !== undefined) {
+    order.adminNote = adminNote;
+  }
+
+  await order.save();
+
   const customer = order.customer;
 
-if (order.status !== previousStatus) {
-  try {
-    await sendStatusEmail(order, customer);
-  } catch (err) {
-    console.error("Order status email failed:", err.message);
+  // Customer status update email
+  if (order.status !== previousStatus) {
+    try {
+      await sendStatusEmail(order, customer);
+      console.log("Order status email sent successfully.");
+    } catch (err) {
+      console.error("Order status email failed:", err);
+    }
   }
-}
 
-if (
-  previousPaymentStatus !== "paid" &&
-  order.paymentStatus === "paid"
-) {
-  try {
-    await sendPaymentReceipt(order, customer);
-  } catch (err) {
-    console.error("Payment receipt email failed:", err.message);
+  // Send receipt only when payment changes to paid
+  if (
+    previousPaymentStatus !== "paid" &&
+    order.paymentStatus === "paid"
+  ) {
+    try {
+      await sendPaymentReceipt(order, customer);
+      console.log("Payment receipt email sent successfully.");
+    } catch (err) {
+      console.error("Payment receipt email failed:", err);
+    }
   }
-}
-  res.json({ message: 'Order updated.', order });
+
+  return res.json({
+    message: "Order updated successfully.",
+    order,
+  });
 });
+
