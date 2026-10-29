@@ -11,60 +11,275 @@ const asyncHandler = require('../middleware/asyncHandler');
  const { getPagination, paginated } = require('../utils/pagination');
 function addressSnapshot(a) { if (!a) return null; 
   const keys = ['fullName','phone','addressLine1','addressLine2','landmark','city','state','postalCode','country']; const out = {}; keys.forEach(k => { if (a[k] !== undefined) out[k] = a[k]; }); return out; }
+
 exports.createOrder = asyncHandler(async (req, res) => {
-  const { items, addressId, shippingAddress, paymentMethod = 'cod', customerNote = '', couponCode } = req.body;
-  if (!Array.isArray(items) || !items.length) return res.status(400).json({ message: 'At least one order item is required.' });
+  const {
+    items,
+    addressId,
+    shippingAddress,
+    paymentMethod = "cod",
+    customerNote = "",
+    couponCode,
+  } = req.body;
+
+  if (!Array.isArray(items) || !items.length) {
+    return res.status(400).json({
+      message: "At least one order item is required.",
+    });
+  }
+
   let address = shippingAddress;
-  if (addressId) address = req.customer.addresses.id(addressId);
-  const requiredAddress = ['fullName','phone','addressLine1','city','state','postalCode'];
-  if (!address || requiredAddress.some(k => !address[k])) return res.status(400).json({ message: 'A complete shipping address is required.' });
-  if (!['cod','online','upi','card','netbanking'].includes(paymentMethod)) return res.status(400).json({ message: 'Invalid payment method.' });
-  const session = await mongoose.startSession(); 
-  try {
-  await sendNewOrderAdminEmail(created, req.customer);
-} catch (emailError) {
-  console.error("Admin order email failed:", emailError.message);
-}
+
+  if (addressId) {
+    address = req.customer.addresses.id(addressId);
+  }
+
+  const requiredAddress = [
+    "fullName",
+    "phone",
+    "addressLine1",
+    "city",
+    "state",
+    "postalCode",
+  ];
+
+  if (!address || requiredAddress.some((key) => !address[key])) {
+    return res.status(400).json({
+      message: "A complete shipping address is required.",
+    });
+  }
+
+  if (!["cod", "online", "upi", "card", "netbanking"].includes(paymentMethod)) {
+    return res.status(400).json({
+      message: "Invalid payment method.",
+    });
+  }
+
+  const session = await mongoose.startSession();
   let created;
+
   try {
     await session.withTransaction(async () => {
-      let subtotal = 0; const orderItems = [];
+      let subtotal = 0;
+      const orderItems = [];
+
       for (const item of items) {
-        const qty = Number(item.quantity); if (!Number.isInteger(qty) || qty < 1 || qty > 100) throw Object.assign(new Error('Each quantity must be an integer between 1 and 100.'), { statusCode: 400 });
-        const product = await Product.findOne({ _id: item.productId, isActive: true }).session(session);
-        if (!product) throw Object.assign(new Error(`Product not found: ${item.productId}`), { statusCode: 404 });
-        if (product.stock < qty) throw Object.assign(new Error(`Insufficient stock for ${product.name}. Available: ${product.stock}`), { statusCode: 409 });
-        const unitPrice = product.salePrice != null ? product.salePrice : product.price; const lineTotal = Math.round(unitPrice * qty * 100) / 100; subtotal += lineTotal;
-        const primary = product.images.find(i => i.isPrimary) || product.images[0];
-        orderItems.push({ product: product._id, name: product.name, slug: product.slug, sku: product.sku, image: primary?.url || '', unitPrice, quantity: qty, lineTotal, variant: item.variant || '' });
-        product.stock -= qty; await product.save({ session });
+        const qty = Number(item.quantity);
+
+        if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
+          throw Object.assign(
+            new Error("Each quantity must be an integer between 1 and 100."),
+            { statusCode: 400 }
+          );
+        }
+
+        const product = await Product.findOne({
+          _id: item.productId,
+          isActive: true,
+        }).session(session);
+
+        if (!product) {
+          throw Object.assign(
+            new Error(`Product not found: ${item.productId}`),
+            { statusCode: 404 }
+          );
+        }
+
+        if (product.stock < qty) {
+          throw Object.assign(
+            new Error(
+              `Insufficient stock for ${product.name}. Available: ${product.stock}`
+            ),
+            { statusCode: 409 }
+          );
+        }
+
+        const unitPrice =
+          product.salePrice != null ? product.salePrice : product.price;
+
+        const lineTotal = Math.round(unitPrice * qty * 100) / 100;
+        subtotal += lineTotal;
+
+        const primary =
+          product.images.find((image) => image.isPrimary) ||
+          product.images[0];
+
+        orderItems.push({
+          product: product._id,
+          name: product.name,
+          slug: product.slug,
+          sku: product.sku,
+          image: primary?.url || "",
+          unitPrice,
+          quantity: qty,
+          lineTotal,
+          variant: item.variant || "",
+        });
+
+        product.stock -= qty;
+        await product.save({ session });
       }
-      let discount = 0; let coupon = null; let normalizedCode = '';
+
+      let discount = 0;
+      let coupon = null;
+      let normalizedCode = "";
+
       if (couponCode) {
-        normalizedCode = String(couponCode).trim().toUpperCase(); coupon = await Coupon.findOne({ code: normalizedCode, isActive: true }).session(session);
-        if (!coupon) throw Object.assign(new Error('Coupon is invalid or inactive.'), { statusCode: 400 });
+        normalizedCode = String(couponCode).trim().toUpperCase();
+
+        coupon = await Coupon.findOne({
+          code: normalizedCode,
+          isActive: true,
+        }).session(session);
+
+        if (!coupon) {
+          throw Object.assign(new Error("Coupon is invalid or inactive."), {
+            statusCode: 400,
+          });
+        }
+
         const now = new Date();
-        if ((coupon.startsAt && now < coupon.startsAt) || (coupon.expiresAt && now > coupon.expiresAt)) throw Object.assign(new Error('Coupon is outside its active dates.'), { statusCode: 400 });
-        if (coupon.usageLimit != null && coupon.usedCount >= coupon.usageLimit) throw Object.assign(new Error('Coupon usage limit reached.'), { statusCode: 400 });
-        if (subtotal < coupon.minOrderAmount) throw Object.assign(new Error(`Minimum order amount is ${coupon.minOrderAmount}.`), { statusCode: 400 });
-        const usage = coupon.usedBy.find(u => String(u.customer) === String(req.customer._id));
-        if (usage && usage.count >= coupon.perCustomerLimit) throw Object.assign(new Error('You have reached this coupon usage limit.'), { statusCode: 400 });
-        if (coupon.applicableProductIds.length && !orderItems.some(i => coupon.applicableProductIds.some(pid => String(pid) === String(i.product)))) throw Object.assign(new Error('Coupon does not apply to these products.'), { statusCode: 400 });
-        discount = coupon.discountType === 'percentage' ? subtotal * coupon.discountValue / 100 : coupon.discountValue;
-        if (coupon.maxDiscount != null) discount = Math.min(discount, coupon.maxDiscount);
-        discount = Math.min(Math.round(discount * 100) / 100, subtotal);
+
+        if (
+          (coupon.startsAt && now < coupon.startsAt) ||
+          (coupon.expiresAt && now > coupon.expiresAt)
+        ) {
+          throw Object.assign(new Error("Coupon is outside its active dates."), {
+            statusCode: 400,
+          });
+        }
+
+        if (
+          coupon.usageLimit != null &&
+          coupon.usedCount >= coupon.usageLimit
+        ) {
+          throw Object.assign(new Error("Coupon usage limit reached."), {
+            statusCode: 400,
+          });
+        }
+
+        if (subtotal < coupon.minOrderAmount) {
+          throw Object.assign(
+            new Error(`Minimum order amount is ${coupon.minOrderAmount}.`),
+            { statusCode: 400 }
+          );
+        }
+
+        const usage = coupon.usedBy.find(
+          (entry) => String(entry.customer) === String(req.customer._id)
+        );
+
+        if (usage && usage.count >= coupon.perCustomerLimit) {
+          throw Object.assign(
+            new Error("You have reached this coupon usage limit."),
+            { statusCode: 400 }
+          );
+        }
+
+        if (
+          coupon.applicableProductIds.length &&
+          !orderItems.some((item) =>
+            coupon.applicableProductIds.some(
+              (id) => String(id) === String(item.product)
+            )
+          )
+        ) {
+          throw Object.assign(
+            new Error("Coupon does not apply to these products."),
+            { statusCode: 400 }
+          );
+        }
+
+        discount =
+          coupon.discountType === "percentage"
+            ? (subtotal * coupon.discountValue) / 100
+            : coupon.discountValue;
+
+        if (coupon.maxDiscount != null) {
+          discount = Math.min(discount, coupon.maxDiscount);
+        }
+
+        discount = Math.min(
+          Math.round(discount * 100) / 100,
+          subtotal
+        );
+
         coupon.usedCount += 1;
-        if (usage) usage.count += 1; else coupon.usedBy.push({ customer: req.customer._id, count: 1 });
+
+        if (usage) {
+          usage.count += 1;
+        } else {
+          coupon.usedBy.push({
+            customer: req.customer._id,
+            count: 1,
+          });
+        }
+
         await coupon.save({ session });
       }
-      const shippingFee = Number(process.env.DEFAULT_SHIPPING_FEE || 0); const tax = 0; const total = Math.max(0, Math.round((subtotal - discount + shippingFee + tax) * 100) / 100);
-      const orderNumber = `HOV-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-      const docs = await Order.create([{ orderNumber, customer: req.customer._id, items: orderItems, shippingAddress: addressSnapshot(address), subtotal: Math.round(subtotal * 100) / 100, discount, shippingFee, tax, total, coupon: coupon?._id || null, couponCode: normalizedCode, currency: process.env.CURRENCY || 'INR', paymentMethod, paymentStatus: 'pending', status: 'pending', customerNote, statusHistory: [{ status: 'pending', note: 'Order created by customer' }] }], { session });
+
+      const shippingFee = Number(process.env.DEFAULT_SHIPPING_FEE || 0);
+      const tax = 0;
+
+      const total = Math.max(
+        0,
+        Math.round((subtotal - discount + shippingFee + tax) * 100) / 100
+      );
+
+      const orderNumber =
+        `HOV-${Date.now().toString(36).toUpperCase()}-` +
+        Math.random().toString(36).slice(2, 6).toUpperCase();
+
+      const docs = await Order.create(
+        [
+          {
+            orderNumber,
+            customer: req.customer._id,
+            items: orderItems,
+            shippingAddress: addressSnapshot(address),
+            subtotal: Math.round(subtotal * 100) / 100,
+            discount,
+            shippingFee,
+            tax,
+            total,
+            coupon: coupon?._id || null,
+            couponCode: normalizedCode,
+            currency: process.env.CURRENCY || "INR",
+            paymentMethod,
+            paymentStatus: "pending",
+            status: "pending",
+            customerNote,
+            statusHistory: [
+              {
+                status: "pending",
+                note: "Order created by customer",
+              },
+            ],
+          },
+        ],
+        { session }
+      );
+
       created = docs[0];
     });
-  } finally { await session.endSession(); }
-  res.status(201).json({ message: 'Order created. Online payment must be verified by a trusted payment gateway webhook before marking it paid.', order: created });
+  } finally {
+    await session.endSession();
+  }
+
+  // Send email only after the order transaction has completed.
+  try {
+    await sendNewOrderAdminEmail(created, req.customer);
+    console.log("Admin order email sent successfully.");
+  } catch (emailError) {
+    console.error("Admin order email failed:", emailError);
+  }
+
+  return res.status(201).json({
+    message: "Order created successfully.",
+    order: created,
+  });
 });
+
 exports.myOrders = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query); const filter = { customer: req.customer._id };
   const [orders, total] = await Promise.all([Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit), Order.countDocuments(filter)]); res.json(paginated(orders, total, page, limit));
