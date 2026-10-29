@@ -1,7 +1,16 @@
 const mongoose = require('mongoose');
-const Product = require('../models/Product'); const Coupon = require('../models/Coupon'); const Order = require('../models/Order');
-const asyncHandler = require('../middleware/asyncHandler'); const { getPagination, paginated } = require('../utils/pagination');
-function addressSnapshot(a) { if (!a) return null; const keys = ['fullName','phone','addressLine1','addressLine2','landmark','city','state','postalCode','country']; const out = {}; keys.forEach(k => { if (a[k] !== undefined) out[k] = a[k]; }); return out; }
+const {
+  sendNewOrderAdminEmail,
+  sendStatusEmail,
+  sendPaymentReceipt,
+} = require("../utils/orderEmails");
+const Product = require('../models/Product'); 
+const Coupon = require('../models/Coupon');
+ const Order = require('../models/Order');
+const asyncHandler = require('../middleware/asyncHandler');
+ const { getPagination, paginated } = require('../utils/pagination');
+function addressSnapshot(a) { if (!a) return null; 
+  const keys = ['fullName','phone','addressLine1','addressLine2','landmark','city','state','postalCode','country']; const out = {}; keys.forEach(k => { if (a[k] !== undefined) out[k] = a[k]; }); return out; }
 exports.createOrder = asyncHandler(async (req, res) => {
   const { items, addressId, shippingAddress, paymentMethod = 'cod', customerNote = '', couponCode } = req.body;
   if (!Array.isArray(items) || !items.length) return res.status(400).json({ message: 'At least one order item is required.' });
@@ -10,7 +19,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const requiredAddress = ['fullName','phone','addressLine1','city','state','postalCode'];
   if (!address || requiredAddress.some(k => !address[k])) return res.status(400).json({ message: 'A complete shipping address is required.' });
   if (!['cod','online','upi','card','netbanking'].includes(paymentMethod)) return res.status(400).json({ message: 'Invalid payment method.' });
-  const session = await mongoose.startSession(); let created;
+  const session = await mongoose.startSession(); 
+  try {
+  await sendNewOrderAdminEmail(created, req.customer);
+} catch (emailError) {
+  console.error("Admin order email failed:", emailError.message);
+}
+  let created;
   try {
     await session.withTransaction(async () => {
       let subtotal = 0; const orderItems = [];
@@ -54,6 +69,7 @@ exports.myOrders = asyncHandler(async (req, res) => {
   const { page, limit, skip } = getPagination(req.query); const filter = { customer: req.customer._id };
   const [orders, total] = await Promise.all([Order.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit), Order.countDocuments(filter)]); res.json(paginated(orders, total, page, limit));
 });
+
 exports.getMyOrder = asyncHandler(async (req, res) => { const order = await Order.findOne({ _id: req.params.id, customer: req.customer._id }); if (!order) return res.status(404).json({ message: 'Order not found.' }); res.json({ order }); });
 exports.cancelMyOrder = asyncHandler(async (req, res) => {
   const session = await mongoose.startSession(); let order;
@@ -75,7 +91,12 @@ exports.adminListOrders = asyncHandler(async (req, res) => {
 });
 exports.adminGetOrder = asyncHandler(async (req, res) => { const order = await Order.findById(req.params.id).populate('customer', 'name email phone'); if (!order) return res.status(404).json({ message: 'Order not found.' }); res.json({ order }); });
 exports.adminUpdateOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id); if (!order) return res.status(404).json({ message: 'Order not found.' });
+
+  const previousStatus = order.status;
+const previousPaymentStatus = order.paymentStatus;
+
+ const order = await Order.findById(req.params.id)
+  .populate("customer", "name email phone");
   const { status, paymentStatus, paymentReference, trackingNumber, carrier, adminNote } = req.body;
   const validStatus = ['pending','confirmed','processing','shipped','delivered','cancelled','returned'];
   const validPayment = ['pending','paid','failed','refunded','partially_refunded'];
@@ -96,5 +117,26 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
   if (trackingNumber !== undefined) order.trackingNumber = trackingNumber;
   if (carrier !== undefined) order.carrier = carrier;
   if (adminNote !== undefined) order.adminNote = adminNote;
-  await order.save(); res.json({ message: 'Order updated.', order });
+  await order.save(); 
+  const customer = order.customer;
+
+if (order.status !== previousStatus) {
+  try {
+    await sendStatusEmail(order, customer);
+  } catch (err) {
+    console.error("Order status email failed:", err.message);
+  }
+}
+
+if (
+  previousPaymentStatus !== "paid" &&
+  order.paymentStatus === "paid"
+) {
+  try {
+    await sendPaymentReceipt(order, customer);
+  } catch (err) {
+    console.error("Payment receipt email failed:", err.message);
+  }
+}
+  res.json({ message: 'Order updated.', order });
 });
