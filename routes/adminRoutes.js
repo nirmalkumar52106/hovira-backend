@@ -1,0 +1,13 @@
+const router = require('express').Router(); 
+const c = require('../controllers/adminController'); 
+const upload = require('../middleware/upload');
+ const { protectAdmin, protectSuperAdmin } = require('../middleware/auth');
+  const { requireObjectId } = require('../middleware/validate');
+router.get('/profile', protectAdmin, c.getProfile);
+ router.patch('/profile', protectAdmin, upload.single('avatar'), c.updateProfile); 
+ router.patch('/profile/password', protectAdmin, c.changePassword); 
+ router.get('/dashboard', protectAdmin, c.dashboard);
+router.get('/users', protectSuperAdmin, c.listAdmins);
+ router.post('/users', protectSuperAdmin, c.createAdmin); 
+ router.patch('/users/:id', protectSuperAdmin, requireObjectId('id'), c.updateAdmin);
+module.exports = router;

@@ -1,0 +1,13 @@
+const router = require('express').Router(); 
+const c = require('../controllers/productController');
+ const upload = require('../middleware/upload'); 
+ const { protectAdmin } = require('../middleware/auth'); 
+ const { requireObjectId } = require('../middleware/validate');
+router.get('/', c.listProducts); 
+router.post('/', protectAdmin, upload.array('images', 12), c.createProduct); 
+router.post('/upload-images', protectAdmin, upload.array('images', 12), c.uploadProductImages);
+router.get('/:slugOrId', c.getProduct); 
+router.put('/:id', protectAdmin, requireObjectId('id'), upload.array('images', 12), c.updateProduct);
+ router.delete('/:id', protectAdmin, requireObjectId('id'), c.deleteProduct);
+  router.delete('/:id/images/:imageId', protectAdmin, requireObjectId('id'), c.deleteProductImage);
+module.exports = router;

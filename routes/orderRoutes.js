@@ -1,0 +1,12 @@
+const router = require('express').Router();
+ const c = require('../controllers/orderController');
+  const { protectAdmin, protectCustomer } = require('../middleware/auth'); 
+  const { requireObjectId } = require('../middleware/validate');
+router.post('/', protectCustomer, c.createOrder); 
+router.get('/my', protectCustomer, c.myOrders);
+ router.get('/my/:id', protectCustomer, requireObjectId('id'), c.getMyOrder); 
+ router.patch('/my/:id/cancel', protectCustomer, requireObjectId('id'), c.cancelMyOrder);
+router.get('/', protectAdmin, c.adminListOrders);
+ router.get('/:id', protectAdmin, requireObjectId('id'), c.adminGetOrder); 
+ router.patch('/:id', protectAdmin, requireObjectId('id'), c.adminUpdateOrder);
+module.exports = router;

@@ -1,0 +1,15 @@
+const router = require('express').Router();
+ const c = require('../controllers/customerController');
+  const { protectCustomer, protectAdmin, protectSuperAdmin } = require('../middleware/auth'); 
+  const { requireObjectId } = require('../middleware/validate');
+router.get('/me', protectCustomer, c.getMe); 
+router.patch('/me', protectCustomer, c.updateMe);
+ router.patch('/me/password', protectCustomer, c.changePassword);
+router.post('/me/addresses', protectCustomer, c.addAddress);
+ router.patch('/me/addresses/:addressId', protectCustomer, c.updateAddress);
+  router.delete('/me/addresses/:addressId', protectCustomer, c.deleteAddress); 
+  router.get('/me/orders', protectCustomer, c.myOrders);
+router.get('/', protectAdmin, c.adminListCustomers); 
+router.get('/:id', protectAdmin, requireObjectId('id'), c.adminGetCustomer);
+ router.patch('/:id', protectSuperAdmin, requireObjectId('id'), c.adminUpdateCustomer);
+module.exports = router;
