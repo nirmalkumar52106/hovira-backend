@@ -1,36 +1,21 @@
-const { timingSafeEqual } = require("node:crypto");
 const router = require("express").Router();
+const rateLimit = require("express-rate-limit");
 const { sendEmail } = require("../utils/mailer");
 
 const recipient = "nirmalkumar52106@gmail.com";
+const emailTestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 1,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: { message: "Email test limit reached. Try again in 15 minutes." },
+  },
+});
 
-router.post("/", async (req, res) => {
-  const expectedToken = process.env.EMAIL_TEST_TOKEN;
-
-  if (!expectedToken) {
-    return res.status(503).json({
-      success: false,
-      error: { message: "Email test endpoint is not configured." },
-    });
-  }
-
-  const authorization = req.get("authorization") || "";
-  const suppliedToken = authorization.startsWith("Bearer ")
-    ? authorization.slice(7)
-    : "";
-  const expectedBuffer = Buffer.from(expectedToken);
-  const suppliedBuffer = Buffer.from(suppliedToken);
-
-  if (
-    expectedBuffer.length !== suppliedBuffer.length ||
-    !timingSafeEqual(expectedBuffer, suppliedBuffer)
-  ) {
-    return res.status(401).json({
-      success: false,
-      error: { message: "A valid bearer token is required." },
-    });
-  }
-
+router.get("/", emailTestLimiter, async (req, res) => {
+  res.set("Cache-Control", "no-store");
   try {
     const result = await sendEmail({
       to: recipient,
