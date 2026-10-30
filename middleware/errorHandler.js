@@ -10,6 +10,9 @@ function errorHandler(err, req, res, next) {
   if (err.code === 11000) { status = 409; message = `Duplicate value for ${Object.keys(err.keyValue || {}).join(', ')}`; }
   if (err.name === 'MulterError') { status = 400; message = err.code === 'LIMIT_FILE_SIZE' ? 'Image must be 5 MB or smaller.' : err.message; }
   if (process.env.NODE_ENV !== 'production') console.error(err);
+  else { 
+   res.status(status).json({ message :err, status : false });
+  }
   res.status(status).json({ message, ...(process.env.NODE_ENV !== 'production' ? { stack: err.stack } : {}) });
 }
 module.exports = { notFound, errorHandler };
