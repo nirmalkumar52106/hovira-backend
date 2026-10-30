@@ -323,6 +323,7 @@ exports.adminListOrders = asyncHandler(async (req, res) => {
 });
 exports.adminGetOrder = asyncHandler(async (req, res) => { const order = await Order.findById(req.params.id).populate('customer', 'name email phone'); if (!order) return res.status(404).json({ message: 'Order not found.' }); res.json({ order }); });
 
+
 exports.adminUpdateOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id).populate(
     "customer",
@@ -330,10 +331,12 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
   );
 
   if (!order) {
-    return res.status(404).json({ message: "Order not found." });
+    return res.status(404).json({
+      message: "Order not found.",
+    });
   }
 
-  // Order fetch hone ke baad hi previous values read karo
+  // Store previous values before updating
   const previousStatus = order.status;
   const previousPaymentStatus = order.paymentStatus;
 
@@ -346,6 +349,7 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
     adminNote,
   } = req.body;
 
+  // Valid order statuses
   const validStatus = [
     "pending",
     "confirmed",
@@ -356,6 +360,7 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
     "returned",
   ];
 
+  // Valid payment statuses
   const validPayment = [
     "pending",
     "paid",
@@ -364,50 +369,81 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
     "partially_refunded",
   ];
 
+  // Validate order status
   if (status && !validStatus.includes(status)) {
-    return res.status(400).json({ message: "Invalid order status." });
+    return res.status(400).json({
+      message: "Invalid order status.",
+    });
   }
 
+  // Validate payment status
   if (paymentStatus && !validPayment.includes(paymentStatus)) {
-    return res.status(400).json({ message: "Invalid payment status." });
+    return res.status(400).json({
+      message: "Invalid payment status.",
+    });
   }
+
+  // =====================================
+  // ORDER STATUS UPDATE
+  // =====================================
 
   if (status && status !== order.status) {
+    // Prevent updating delivered/cancelled orders
     if (["delivered", "cancelled"].includes(order.status)) {
       return res.status(400).json({
-        message: "Delivered/cancelled orders cannot be changed through this endpoint.",
+        message:
+          "Delivered/cancelled orders cannot be changed through this endpoint.",
       });
     }
 
-    if (status === "cancelled" && order.paymentStatus === "paid") {
+    // Prevent cancelling paid orders without refund
+    if (
+      status === "cancelled" &&
+      order.paymentStatus === "paid"
+    ) {
       return res.status(400).json({
-        message: "Paid order must be refunded through payment provider before cancellation.",
+        message:
+          "Paid order must be refunded through payment provider before cancellation.",
       });
     }
 
+    // Restore stock when order is cancelled
     if (status === "cancelled") {
       for (const item of order.items) {
         await Product.updateOne(
           { _id: item.product },
-          { $inc: { stock: item.quantity } }
+          {
+            $inc: {
+              stock: item.quantity,
+            },
+          }
         );
       }
 
       order.cancelledAt = new Date();
     }
 
+    // Delivered date
     if (status === "delivered") {
       order.deliveredAt = new Date();
     }
 
+    // Update status
     order.status = status;
 
+    // Add status history
     order.statusHistory.push({
       status,
-      note: adminNote || `Status changed by ${req.admin.name}`,
-      changedBy: req.admin._id,
+      note:
+        adminNote ||
+        `Status changed by ${req.admin?.name || "Admin"}`,
+      changedBy: req.admin?._id,
     });
   }
+
+  // =====================================
+  // PAYMENT STATUS UPDATE
+  // =====================================
 
   if (paymentStatus) {
     if (
@@ -417,58 +453,133 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
       !order.paymentReference
     ) {
       return res.status(400).json({
-        message: "A verified payment reference is required.",
+        message:
+          "A verified payment reference is required.",
       });
     }
 
     order.paymentStatus = paymentStatus;
   }
 
+  // Payment reference
   if (paymentReference !== undefined) {
     order.paymentReference = paymentReference;
   }
 
+  // Tracking number
   if (trackingNumber !== undefined) {
     order.trackingNumber = trackingNumber;
   }
 
+  // Carrier
   if (carrier !== undefined) {
     order.carrier = carrier;
   }
 
+  // Admin note
   if (adminNote !== undefined) {
     order.adminNote = adminNote;
   }
+
+  // =====================================
+  // SAVE ORDER
+  // =====================================
 
   await order.save();
 
   const customer = order.customer;
 
-  // Customer status update email
+  console.log("====================================");
+  console.log("ADMIN ORDER UPDATE");
+  console.log("Order ID:", order._id);
+  console.log("Customer:", customer?.name);
+  console.log("Customer Email:", customer?.email);
+  console.log("Previous Status:", previousStatus);
+  console.log("Updated Status:", order.status);
+  console.log("Previous Payment:", previousPaymentStatus);
+  console.log("Updated Payment:", order.paymentStatus);
+  console.log("====================================");
+
+  // =====================================
+  // ORDER STATUS EMAIL
+  // =====================================
+
   if (order.status !== previousStatus) {
+    console.log("Order status changed. Sending email...");
+
     try {
+      if (!customer) {
+        throw new Error("Order customer not found.");
+      }
+
+      if (!customer.email) {
+        throw new Error("Customer email not found.");
+      }
+
       await sendStatusEmail(order, customer);
-      console.log("Order status email sent successfully.");
+
+      console.log(
+        "SUCCESS: Order status email sent to:",
+        customer.email
+      );
     } catch (err) {
-      console.error("Order status email failed:", err);
+      console.error("ORDER STATUS EMAIL FAILED");
+      console.error("Order ID:", order._id);
+      console.error("Customer Email:", customer?.email);
+      console.error("Error:", err.message);
+      console.error(err.stack);
     }
+  } else {
+    console.log(
+      "Order status unchanged. Status email skipped."
+    );
   }
 
-  // Send receipt only when payment changes to paid
+  // =====================================
+  // PAYMENT RECEIPT EMAIL
+  // =====================================
+
   if (
     previousPaymentStatus !== "paid" &&
     order.paymentStatus === "paid"
   ) {
+    console.log("Payment changed to PAID. Sending receipt...");
+
     try {
+      if (!customer) {
+        throw new Error("Order customer not found.");
+      }
+
+      if (!customer.email) {
+        throw new Error("Customer email not found.");
+      }
+
       await sendPaymentReceipt(order, customer);
-      console.log("Payment receipt email sent successfully.");
+
+      console.log(
+        "SUCCESS: Payment receipt sent to:",
+        customer.email
+      );
     } catch (err) {
-      console.error("Payment receipt email failed:", err);
+      console.error("PAYMENT RECEIPT EMAIL FAILED");
+      console.error("Order ID:", order._id);
+      console.error("Customer Email:", customer?.email);
+      console.error("Error:", err.message);
+      console.error(err.stack);
     }
+  } else {
+    console.log(
+      "Payment receipt condition not matched."
+    );
   }
 
-  return res.json({
+  // =====================================
+  // RESPONSE
+  // =====================================
+
+  return res.status(200).json({
     message: "Order updated successfully.",
     order,
   });
 });
+
