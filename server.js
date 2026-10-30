@@ -74,6 +74,34 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Root Route
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'HOVIRA Cosmetics API is running successfully 🚀',
+  });
+});
+
+// Health Check
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'HOVIRA Cosmetics API',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// MongoDB Connection Middleware
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('MongoDB connection failed:', err.message);
+    next(err);
+  }
+});
+
 // Connect to MongoDB before handling database-dependent routes
 app.use(async (req, res, next) => {
   try {
