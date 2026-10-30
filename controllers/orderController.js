@@ -268,11 +268,24 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
   // Send email only after the order transaction has completed.
   try {
-    await sendNewOrderAdminEmail(created, req.customer);
-    console.log("Admin order email sent successfully.");
-  } catch (emailError) {
-    console.error("Admin order email failed:", emailError);
-  }
+      console.log("Starting admin order email...");
+
+      const emailResult = await sendNewOrderAdminEmail(
+        created,
+        req.customer
+      );
+
+      console.log("Admin order email result:", emailResult);
+
+    } catch (emailError) {
+      console.error("Admin order email failed:", {
+        message: emailError.message,
+        code: emailError.code,
+        command: emailError.command,
+        response: emailError.response,
+        stack: emailError.stack,
+      });
+    }
 
   return res.status(201).json({
     message: "Order created successfully.",
