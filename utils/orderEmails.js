@@ -70,6 +70,19 @@ async function sendNewOrderAdminEmail(order, customer) {
   });
 }
 
+async function sendOrderConfirmationEmail(order, customer) {
+  return sendEmail({
+    to: customer?.email,
+    subject: `HOVIRA Order Confirmation: ${order.orderNumber}`,
+    html: `
+      <h1>Thank you for your order!</h1>
+      <p>Hello ${customer?.name || order.shippingAddress?.fullName || "Customer"},</p>
+      <p>We received your order and will keep you updated on its status.</p>
+      ${orderDetailsHtml(order)}
+    `,
+  });
+}
+
 async function sendStatusEmail(order, customer) {
   if (!customer?.email) return;
 
@@ -115,6 +128,7 @@ async function sendPaymentReceipt(order, customer) {
 
 module.exports = {
   sendNewOrderAdminEmail,
+  sendOrderConfirmationEmail,
   sendStatusEmail,
   sendPaymentReceipt,
 };

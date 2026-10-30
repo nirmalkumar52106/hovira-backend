@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const {
   sendNewOrderAdminEmail,
+  sendOrderConfirmationEmail,
   sendStatusEmail,
   sendPaymentReceipt,
 } = require("../utils/orderEmails");
@@ -267,25 +268,28 @@ exports.createOrder = asyncHandler(async (req, res) => {
   }
 
   // Send email only after the order transaction has completed.
-  try {
-      console.log("Starting admin order email...");
+  const emailResults = await Promise.allSettled([
+    sendOrderConfirmationEmail(created, req.customer),
+    sendNewOrderAdminEmail(created, req.customer),
+  ]);
 
-      const emailResult = await sendNewOrderAdminEmail(
-        created,
-        req.customer
-      );
+  emailResults.forEach((result, index) => {
+    const recipient = index === 0 ? "Customer confirmation" : "Admin order";
 
-      console.log("Admin order email result:", emailResult);
-
-    } catch (emailError) {
-      console.error("Admin order email failed:", {
-        message: emailError.message,
-        code: emailError.code,
-        command: emailError.command,
-        response: emailError.response,
-        stack: emailError.stack,
-      });
+    if (result.status === "fulfilled") {
+      console.log(`${recipient} email sent:`, result.value);
+      return;
     }
+
+    const emailError = result.reason;
+    console.error(`${recipient} email failed:`, {
+      message: emailError.message,
+      code: emailError.code,
+      command: emailError.command,
+      response: emailError.response,
+      stack: emailError.stack,
+    });
+  });
 
   return res.status(201).json({
     message: "Order created successfully.",
@@ -468,4 +472,3 @@ exports.adminUpdateOrder = asyncHandler(async (req, res) => {
     order,
   });
 });
-
