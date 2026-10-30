@@ -15,32 +15,37 @@ const transporter = nodemailer.createTransport({
 });
 
 async function sendEmail({ to, subject, html }) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    throw new Error("SMTP configuration is incomplete.");
-  }
+   try{
 
-  if (!to) {
-    throw new Error("Email recipient is missing.");
-  }
-
-  const result = await transporter.sendMail({
-    from: process.env.MAIL_FROM || process.env.SMTP_USER,
-    to,
-    subject,
-    html,
-  });
-
-  console.log("Email accepted by SMTP server:", {
-    messageId: result.messageId,
-    accepted: result.accepted,
-    rejected: result.rejected,
-  });
-
-  if (!result.accepted || result.accepted.length === 0) {
-    throw new Error("SMTP server did not accept the recipient.");
-  }
-
-  return result;
+     if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+       throw new Error("SMTP configuration is incomplete.");
+     }
+   
+     if (!to) {
+       throw new Error("Email recipient is missing.");
+     }
+   
+     const result = await transporter.sendMail({
+       from: process.env.MAIL_FROM || process.env.SMTP_USER,
+       to,
+       subject,
+       html,
+     });
+   
+     console.log("Email accepted by SMTP server:", {
+       messageId: result.messageId,
+       accepted: result.accepted,
+       rejected: result.rejected,
+     });
+   
+     if (!result.accepted || result.accepted.length === 0) {
+       throw new Error("SMTP server did not accept the recipient.");
+     }
+     console.log(result)
+     return result;
+   } catch (err){
+    console.log(err)
+   }
 }
 
 module.exports = { sendEmail };
