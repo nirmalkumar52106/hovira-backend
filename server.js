@@ -91,6 +91,9 @@ app.get('/', (req, res) => {
   });
 });
 
+// Protected SMTP diagnostic; does not depend on MongoDB.
+app.use('/api/email-test', require('./routes/emailTestRoutes'));
+
 // MongoDB Connection Middleware
 app.use(async (req, res, next) => {
   try {
