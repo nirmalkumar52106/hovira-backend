@@ -39,7 +39,9 @@ const origins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://hovira-cosmetics.netlify.app",
-  "https://hoviraskincare.com"
+  "https://hoviraskincare.com",
+  "https://radiant-kelpie-26709c.netlify.app/",
+  "*"
 ];
 
 app.use(
