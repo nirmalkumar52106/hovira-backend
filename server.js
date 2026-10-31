@@ -61,8 +61,8 @@ app.use(
 );
 
 
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
@@ -77,13 +77,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Root Route
-app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'HOVIRA Cosmetics API is running successfully 🚀',
-  });
-});
 
 // Health Check
 app.get('/', (req, res) => {
