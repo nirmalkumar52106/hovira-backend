@@ -21,7 +21,24 @@ const productSchema = new mongoose.Schema({
   currency: { type: String, uppercase: true, default: 'INR' }, stock: { type: Number, min: 0, default: 0 }, lowStockThreshold: { type: Number, min: 0, default: 5 },
   images: { type: [imageSchema], default: [] }, variants: { type: [variantSchema], default: [] }, tags: { type: [String], default: [] },
   weightGrams: { type: Number, min: 0, default: null }, isFeatured: { type: Boolean, default: false }, isActive: { type: Boolean, default: true },
-  seo: { type: seoSchema, default: () => ({}) }, createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  seo: { type: seoSchema, default: () => ({}) },
+   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+   launchEmailStatus: {
+  type: String,
+  enum: ["not_sent", "sent", "partial", "failed"],
+  default: "not_sent",
+},
+
+launchEmailSentAt: {
+  type: Date,
+  default: null,
+},
+
+launchEmailStats: {
+  total: { type: Number, default: 0 },
+  sent: { type: Number, default: 0 },
+  failed: { type: Number, default: 0 },
+},
 }, { timestamps: true });
 productSchema.pre('validate', function () {
   if (this.name && !this.slug) this.slug = slugify(this.name, { lower: true, strict: true, trim: true });
