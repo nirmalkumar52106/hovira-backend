@@ -11,6 +11,9 @@ const connectDB = require('./config/db');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 const newsletterRoutes = require("./routes/newsletterRoutes");
 const adminNewsletterRoutes = require("./routes/adminNewsletterRoutes");
+const adminNewsletterCampaignRoutes = require(
+  "./routes/adminNewsletterCampaignRoutes"
+);
 const app = express();
 
 app.disable('x-powered-by');
@@ -103,6 +106,10 @@ app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
 app.use("/api/newsletter", newsletterRoutes);
 app.use("/api/admin/newsletter", adminNewsletterRoutes);
+app.use(
+  "/api/admin/newsletter/campaigns",
+  adminNewsletterCampaignRoutes
+);
 
 app.use(notFound);
 app.use(errorHandler);
