@@ -21,11 +21,11 @@ app.use(helmet());
 
 
 const origins = [
-  "http://localhost:5173/",
-  "http://localhost:5174/",
+  "http://localhost:5173",
+  "http://localhost:5174",
   "https://hovira-cosmetics.netlify.app",
   "https://hoviraskincare.com",
-  "https://radiant-kelpie-26709c.netlify.app/",
+  "https://radiant-kelpie-26709c.netlify.app",
   "*"
 ];
 
