@@ -17,30 +17,39 @@ app.disable('x-powered-by');
 app.use(helmet());
 
 
+
 const origins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "https://hovira-cosmetics.netlify.app",
   "https://hoviraskincare.com",
+  "https://www.hoviraskincare.com",
   "https://radiant-kelpie-26709c.netlify.app",
-  "*"
 ];
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin || origins.includes(origin)) {
-        return callback(null, true);
-      }
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || origins.includes(origin)) {
+      return callback(null, true);
+    }
 
-      console.error("Blocked CORS origin:", origin);
-      return callback(new Error("CORS origin not allowed"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
-  })
-);
+    console.error("Blocked CORS origin:", origin);
+    return callback(new Error(`Blocked CORS origin: ${origin}`));
+  },
+
+  credentials: true,
+
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Accept",
+  ],
+};
+
+app.use(cors(corsOptions));
+
 
 
 app.use(express.json({ limit: '25mb' }));
