@@ -104,10 +104,10 @@ app.use('/api/customers', require('./routes/customerRoutes'));
 app.use('/api/coupons', require('./routes/couponRoutes'));
 app.use('/api/orders', require('./routes/orderRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
-app.use("/api/newsletter", newsletterRoutes);
-app.use("/api/admin/newsletter", adminNewsletterRoutes);
+app.use("/newsletter", newsletterRoutes);
+app.use("/admin/newsletter", adminNewsletterRoutes);
 app.use(
-  "/api/admin/newsletter/campaigns",
+  "/admin/newsletter/campaigns",
   adminNewsletterCampaignRoutes
 );
 
