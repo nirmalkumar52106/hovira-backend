@@ -15,12 +15,48 @@ const productSchema = new mongoose.Schema({
   shortDescription: { type: String, trim: true, maxlength: 500, default: '' },
   description: { type: String, required: true, trim: true },
   content: { type: String, trim: true, default: '' },
-  ingredients: { type: [String], default: [] }, benefits: { type: [String], default: [] }, howToUse: { type: String, trim: true, default: '' }, warnings: { type: String, trim: true, default: '' },
-  category: { type: String, required: true, trim: true, index: true }, brand: { type: String, trim: true, default: 'HOVIRA' },
-  price: { type: Number, required: true, min: 0 }, salePrice: { type: Number, min: 0, default: null }, costPrice: { type: Number, min: 0, default: null },
-  currency: { type: String, uppercase: true, default: 'INR' }, stock: { type: Number, min: 0, default: 0 }, lowStockThreshold: { type: Number, min: 0, default: 5 },
-  images: { type: [imageSchema], default: [] }, variants: { type: [variantSchema], default: [] }, tags: { type: [String], default: [] },
-  weightGrams: { type: Number, min: 0, default: null }, isFeatured: { type: Boolean, default: false }, isActive: { type: Boolean, default: true },
+  ingredients: { type: [String], default: [] }, 
+  benefits: { type: [String], default: [] },
+   howToUse: { type: String, trim: true, default: '' },
+    warnings: { type: String, trim: true, default: '' },
+  category: { type: String, required: true, trim: true, index: true }, 
+  brand: { type: String, trim: true, default: 'HOVIRA' },
+  price: { type: Number, required: true, min: 0 },
+    // Pricing & Tax Settings
+  price: { type: Number, required: true, min: 0 },
+  salePrice: { type: Number, min: 0, default: null },
+  costPrice: { type: Number, min: 0, default: null },
+
+  // Shipping Charge
+  shippingCharge: {
+    type: Number,
+    min: 0,
+    default: 0,
+  },
+
+  // GST Settings
+  gstRate: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0,
+  },
+
+  gstType: {
+    type: String,
+    enum: ["exclusive", "inclusive"],
+    default: "exclusive",
+  }, salePrice: { type: Number, min: 0, default: null }, 
+  costPrice: { type: Number, min: 0, default: null },
+  currency: { type: String, uppercase: true, default: 'INR' },
+   stock: { type: Number, min: 0, default: 0 }, 
+   lowStockThreshold: { type: Number, min: 0, default: 5 },
+  images: { type: [imageSchema], default: [] },
+   variants: { type: [variantSchema], default: [] },
+    tags: { type: [String], default: [] },
+  weightGrams: { type: Number, min: 0, default: null }, 
+  isFeatured: { type: Boolean, default: false }, 
+  isActive: { type: Boolean, default: true },
   seo: { type: seoSchema, default: () => ({}) },
    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
    launchEmailStatus: {
