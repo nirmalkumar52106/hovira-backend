@@ -11,13 +11,50 @@ function readToken(req) {
 
 const protectCustomer = asyncHandler(async (req, res, next) => {
   const token = readToken(req);
-  if (!token) return res.status(401).json({ message: 'Authentication required.' });
+
+  console.log("Customer Auth Check:", {
+    tokenReceived: !!token,
+    authorizationHeader: !!req.headers.authorization,
+  });
+
+  if (!token) {
+    return res.status(401).json({
+      message: "Authentication required.",
+    });
+  }
+
   let decoded;
-  try { decoded = jwt.verify(token, process.env.JWT_SECRET); }
-  catch { return res.status(401).json({ message: 'Invalid or expired token.' }); }
-  if (decoded.role !== 'customer') return res.status(403).json({ message: 'Customer access required.' });
-  const customer = await Customer.findById(decoded.id).select('-password');
-  if (!customer || customer.status !== 'active') return res.status(401).json({ message: 'Customer account is unavailable.' });
+
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    console.log("Decoded JWT:", {
+      id: decoded.id,
+      role: decoded.role,
+    });
+
+  } catch (error) {
+    console.log("JWT Verification Error:", error.message);
+
+    return res.status(401).json({
+      message: "Invalid or expired token.",
+    });
+  }
+
+  if (decoded.role !== "customer") {
+    return res.status(403).json({
+      message: "Customer access required.",
+    });
+  }
+
+  const customer = await Customer.findById(decoded.id).select("-password");
+
+  if (!customer || customer.status !== "active") {
+    return res.status(401).json({
+      message: "Customer account is unavailable.",
+    });
+  }
+
   req.customer = customer;
   next();
 });
