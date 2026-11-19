@@ -119,6 +119,7 @@ app.use(
   "./routes/adminNewsletterCampaignRoutes"
 )
 );
+app.use("/api/payments", require("./routes/paymentRoutes"));
 
 app.use(notFound);
 app.use(errorHandler);

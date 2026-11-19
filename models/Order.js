@@ -12,7 +12,33 @@ const orderSchema = new mongoose.Schema({
   status: { type: String, enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'], default: 'pending', index: true },
   paymentMethod: { type: String, enum: ['cod', 'online', 'upi', 'card', 'netbanking'], default: 'cod' },
   paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'], default: 'pending', index: true },
-  paymentReference: { type: String, default: '' }, trackingNumber: { type: String, default: '' }, carrier: { type: String, default: '' }, customerNote: { type: String, default: '' }, adminNote: { type: String, default: '' },
+  paymentReference: { type: String, default: '' },
+  razorpayOrderId: {
+  type: String,
+  default: "",
+  index: true,
+},
+
+razorpayPaymentId: {
+  type: String,
+  default: "",
+  index: true,
+},
+
+razorpaySignature: {
+  type: String,
+  default: "",
+},
+
+paymentDetails: {
+  method: { type: String, default: "" },
+  bank: { type: String, default: "" },
+  wallet: { type: String, default: "" },
+  vpa: { type: String, default: "" },
+  email: { type: String, default: "" },
+  contact: { type: String, default: "" },
+  paidAt: { type: Date, default: null },
+}, trackingNumber: { type: String, default: '' }, carrier: { type: String, default: '' }, customerNote: { type: String, default: '' }, adminNote: { type: String, default: '' },
   statusHistory: [{ status: String, note: String, changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, changedAt: { type: Date, default: Date.now } }],
   cancelledAt: { type: Date, default: null }, deliveredAt: { type: Date, default: null },
 }, { timestamps: true });
