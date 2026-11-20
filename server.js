@@ -120,6 +120,7 @@ app.use(
 )
 );
 app.use("/api/payments", require("./routes/paymentRoutes"));
+app.use("/api/webhooks", require("./routes/webhookRoutes"));
 
 app.use(notFound);
 app.use(errorHandler);
