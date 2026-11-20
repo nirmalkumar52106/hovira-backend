@@ -6,7 +6,7 @@ const { confirmPaidOrderAndNotify } = require("./orderController");
 
 function verifyWebhookSignature(rawBodyBuffer, signatureHeader, secret) {
   if (!secret) {
-    // Allow local testing only if explicitly opted in
+    
     return process.env.ALLOW_UNVERIFIED_WEBHOOK === "true";
   }
 
