@@ -1,7 +1,18 @@
 const mongoose = require('mongoose');
 const orderItemSchema = new mongoose.Schema({
   product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true }, name: { type: String, required: true }, slug: { type: String, default: '' }, sku: { type: String, default: '' },
-  image: { type: String, default: '' }, variant: { type: String, default: '' }, unitPrice: { type: Number, required: true, min: 0 }, quantity: { type: Number, required: true, min: 1 }, lineTotal: { type: Number, required: true, min: 0 },
+  image: { type: String, default: '' }, variant: { type: String, default: '' }, unitPrice: { type: Number, required: true, min: 0 }, quantity: { type: Number, required: true, min: 1 },
+  lineTotal: { type: Number, required: true, min: 0 },
+  gstRate: { type: Number, default: 0, min: 0 },
+  gstType: {
+    type: String,
+    enum: ["inclusive", "exclusive"],
+    default: "exclusive",
+  },
+  taxableAmount: { type: Number, default: 0, min: 0 },
+  gstAmount: { type: Number, default: 0, min: 0 },
+  shippingCharge: { type: Number, default: 0, min: 0 },
+  lineShipping: { type: Number, default: 0, min: 0 },
 }, { _id: false });
 const addressSnapshotSchema = new mongoose.Schema({ fullName: String, phone: String, addressLine1: String, addressLine2: String, landmark: String, city: String, state: String, postalCode: String, country: String }, { _id: false });
 const orderSchema = new mongoose.Schema({
@@ -14,31 +25,31 @@ const orderSchema = new mongoose.Schema({
   paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'], default: 'pending', index: true },
   paymentReference: { type: String, default: '' },
   razorpayOrderId: {
-  type: String,
-  default: "",
-  index: true,
-},
+    type: String,
+    default: "",
+    index: true,
+  },
 
-razorpayPaymentId: {
-  type: String,
-  default: "",
-  index: true,
-},
+  razorpayPaymentId: {
+    type: String,
+    default: "",
+    index: true,
+  },
 
-razorpaySignature: {
-  type: String,
-  default: "",
-},
+  razorpaySignature: {
+    type: String,
+    default: "",
+  },
 
-paymentDetails: {
-  method: { type: String, default: "" },
-  bank: { type: String, default: "" },
-  wallet: { type: String, default: "" },
-  vpa: { type: String, default: "" },
-  email: { type: String, default: "" },
-  contact: { type: String, default: "" },
-  paidAt: { type: Date, default: null },
-}, trackingNumber: { type: String, default: '' }, carrier: { type: String, default: '' }, customerNote: { type: String, default: '' }, adminNote: { type: String, default: '' },
+  paymentDetails: {
+    method: { type: String, default: "" },
+    bank: { type: String, default: "" },
+    wallet: { type: String, default: "" },
+    vpa: { type: String, default: "" },
+    email: { type: String, default: "" },
+    contact: { type: String, default: "" },
+    paidAt: { type: Date, default: null },
+  }, trackingNumber: { type: String, default: '' }, carrier: { type: String, default: '' }, customerNote: { type: String, default: '' }, adminNote: { type: String, default: '' },
   statusHistory: [{ status: String, note: String, changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, changedAt: { type: Date, default: Date.now } }],
   cancelledAt: { type: Date, default: null }, deliveredAt: { type: Date, default: null },
 }, { timestamps: true });

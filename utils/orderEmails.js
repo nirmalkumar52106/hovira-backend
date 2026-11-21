@@ -40,7 +40,8 @@ const orderDetailsHtml = (order) => `
   </table>
 
   <p>Subtotal: ${formatMoney(order.subtotal, order.currency)}</p>
-  <p>Discount: ${formatMoney(order.discount, order.currency)}</p>
+  <p>Discount: -${formatMoney(order.discount, order.currency)}</p>
+  <p>GST: ${formatMoney(order.gstTotal ?? order.tax, order.currency)}</p>
   <p>Shipping: ${formatMoney(order.shippingFee, order.currency)}</p>
   <h3>Grand Total: ${formatMoney(order.total, order.currency)}</h3>
 

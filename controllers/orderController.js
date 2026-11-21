@@ -641,11 +641,13 @@ async function dispatchOrderEmails(tasks) {
   });
 }
 
+
 exports.createOrder = asyncHandler(async (req, res) => {
   const {
     items,
     addressId,
     shippingAddress,
+    billingAddress,
     paymentMethod = "cod",
     customerNote = "",
     couponCode,
@@ -684,32 +686,48 @@ exports.createOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  const roundMoney = (value) =>
+    Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
   const session = await mongoose.startSession();
   let created;
 
   try {
     await session.withTransaction(async () => {
       let subtotal = 0;
+      let shippingFee = 0;
+      let gstTotal = 0;
+      let exclusiveTax = 0;
+
       const orderItems = [];
 
+      // 1. Fetch products and calculate product-wise amounts
       for (const item of items) {
         const qty = Number(item.quantity);
+        const productId = item.productId || item.product;
+
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+          throw Object.assign(
+            new Error("Invalid product ID."),
+            { statusCode: 400 }
+          );
+        }
 
         if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
           throw Object.assign(
-            new Error("Each quantity must be an integer between 1 and 100."),
+            new Error("Each quantity must be between 1 and 100."),
             { statusCode: 400 }
           );
         }
 
         const product = await Product.findOne({
-          _id: item.productId,
+          _id: productId,
           isActive: true,
         }).session(session);
 
         if (!product) {
           throw Object.assign(
-            new Error(`Product not found: ${item.productId}`),
+            new Error(`Product not found: ${productId}`),
             { statusCode: 404 }
           );
         }
@@ -723,38 +741,95 @@ exports.createOrder = asyncHandler(async (req, res) => {
           );
         }
 
-        const unitPrice =
-          product.salePrice != null ? product.salePrice : product.price;
+        const unitPrice = Number(
+          product.salePrice != null
+            ? product.salePrice
+            : product.price
+        ) || 0;
 
-        const lineTotal = Math.round(unitPrice * qty * 100) / 100;
-        subtotal += lineTotal;
+        const lineGross = roundMoney(unitPrice * qty);
+
+        const gstRate = Math.max(
+          0,
+          Number(product.gstRate) || 0
+        );
+
+        const gstType =
+          product.gstType === "inclusive"
+            ? "inclusive"
+            : "exclusive";
+
+        let taxableAmount = lineGross;
+        let gstAmount = 0;
+
+        if (gstRate > 0 && gstType === "inclusive") {
+          taxableAmount = roundMoney(
+            (lineGross * 100) / (100 + gstRate)
+          );
+
+          gstAmount = roundMoney(lineGross - taxableAmount);
+        } else if (gstRate > 0) {
+          gstAmount = roundMoney(
+            (lineGross * gstRate) / 100
+          );
+
+          exclusiveTax += gstAmount;
+        }
+
+        const shippingCharge = Math.max(
+          0,
+          Number(product.shippingCharge) || 0
+        );
+
+        const lineShipping = roundMoney(
+          shippingCharge * qty
+        );
+
+        subtotal += lineGross;
+        shippingFee += lineShipping;
+        gstTotal += gstAmount;
 
         const primary =
-          product.images.find((image) => image.isPrimary) ||
-          product.images[0];
+          product.images?.find((image) => image.isPrimary) ||
+          product.images?.[0];
 
         orderItems.push({
           product: product._id,
           name: product.name,
-          slug: product.slug,
-          sku: product.sku,
+          slug: product.slug || "",
+          sku: product.sku || "",
           image: primary?.url || "",
-          unitPrice,
-          quantity: qty,
-          lineTotal,
           variant: item.variant || "",
+          unitPrice: roundMoney(unitPrice),
+          quantity: qty,
+          lineTotal: lineGross,
+
+          gstRate,
+          gstType,
+          taxableAmount,
+          gstAmount,
+          shippingCharge,
+          lineShipping,
         });
 
         product.stock -= qty;
         await product.save({ session });
       }
 
+      subtotal = roundMoney(subtotal);
+      shippingFee = roundMoney(shippingFee);
+      gstTotal = roundMoney(gstTotal);
+      exclusiveTax = roundMoney(exclusiveTax);
+
+      // 2. Coupon calculation
       let discount = 0;
       let coupon = null;
       let normalizedCode = "";
 
       if (couponCode) {
-        normalizedCode = String(couponCode).trim().toUpperCase();
+        normalizedCode = String(couponCode)
+          .trim()
+          .toUpperCase();
 
         coupon = await Coupon.findOne({
           code: normalizedCode,
@@ -762,9 +837,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
         }).session(session);
 
         if (!coupon) {
-          throw Object.assign(new Error("Coupon is invalid or inactive."), {
-            statusCode: 400,
-          });
+          throw Object.assign(
+            new Error("Coupon is invalid or inactive."),
+            { statusCode: 400 }
+          );
         }
 
         const now = new Date();
@@ -773,32 +849,40 @@ exports.createOrder = asyncHandler(async (req, res) => {
           (coupon.startsAt && now < coupon.startsAt) ||
           (coupon.expiresAt && now > coupon.expiresAt)
         ) {
-          throw Object.assign(new Error("Coupon is outside its active dates."), {
-            statusCode: 400,
-          });
+          throw Object.assign(
+            new Error("Coupon is outside its active dates."),
+            { statusCode: 400 }
+          );
         }
 
         if (
           coupon.usageLimit != null &&
           coupon.usedCount >= coupon.usageLimit
         ) {
-          throw Object.assign(new Error("Coupon usage limit reached."), {
-            statusCode: 400,
-          });
+          throw Object.assign(
+            new Error("Coupon usage limit reached."),
+            { statusCode: 400 }
+          );
         }
 
-        if (subtotal < coupon.minOrderAmount) {
+        if (subtotal < Number(coupon.minOrderAmount || 0)) {
           throw Object.assign(
-            new Error(`Minimum order amount is ${coupon.minOrderAmount}.`),
+            new Error(
+              `Minimum order amount is ${coupon.minOrderAmount}.`
+            ),
             { statusCode: 400 }
           );
         }
 
         const usage = coupon.usedBy.find(
-          (entry) => String(entry.customer) === String(req.customer._id)
+          (entry) =>
+            String(entry.customer) === String(req.customer._id)
         );
 
-        if (usage && usage.count >= coupon.perCustomerLimit) {
+        if (
+          usage &&
+          usage.count >= coupon.perCustomerLimit
+        ) {
           throw Object.assign(
             new Error("You have reached this coupon usage limit."),
             { statusCode: 400 }
@@ -828,9 +912,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
           discount = Math.min(discount, coupon.maxDiscount);
         }
 
-        discount = Math.min(
-          Math.round(discount * 100) / 100,
-          subtotal
+        discount = roundMoney(
+          Math.min(discount, subtotal)
         );
 
         coupon.usedCount += 1;
@@ -847,12 +930,71 @@ exports.createOrder = asyncHandler(async (req, res) => {
         await coupon.save({ session });
       }
 
-      const shippingFee = Number(process.env.DEFAULT_SHIPPING_FEE || 0);
-      const tax = 0;
+      // 3. Allocate discount proportionally to each item
+      for (const item of orderItems) {
+        const lineDiscount =
+          subtotal > 0
+            ? roundMoney(
+                discount * (item.lineTotal / subtotal)
+              )
+            : 0;
+
+        const discountedGross = Math.max(
+          0,
+          roundMoney(item.lineTotal - lineDiscount)
+        );
+
+        if (item.gstRate > 0 && item.gstType === "inclusive") {
+          item.taxableAmount = roundMoney(
+            discountedGross * 100 / (100 + item.gstRate)
+          );
+
+          item.gstAmount = roundMoney(
+            discountedGross - item.taxableAmount
+          );
+        } else if (item.gstRate > 0) {
+          item.taxableAmount = discountedGross;
+          item.gstAmount = roundMoney(
+            discountedGross * item.gstRate / 100
+          );
+        } else {
+          item.taxableAmount = discountedGross;
+          item.gstAmount = 0;
+        }
+
+        item.lineTotal = roundMoney(
+          discountedGross +
+          (item.gstType === "exclusive" ? item.gstAmount : 0) +
+          item.lineShipping
+        );
+      }
+
+      // 4. Recalculate GST after discount
+      gstTotal = roundMoney(
+        orderItems.reduce(
+          (sum, item) => sum + item.gstAmount,
+          0
+        )
+      );
+
+      exclusiveTax = roundMoney(
+        orderItems.reduce(
+          (sum, item) =>
+            sum +
+            (item.gstType === "exclusive" ? item.gstAmount : 0),
+          0
+        )
+      );
+
+      // 5. Final payable amount
+      // Inclusive GST is already inside product price.
+      const tax = exclusiveTax;
 
       const total = Math.max(
         0,
-        Math.round((subtotal - discount + shippingFee + tax) * 100) / 100
+        roundMoney(
+          subtotal - discount + tax + shippingFee
+        )
       );
 
       const orderNumber =
@@ -865,19 +1007,28 @@ exports.createOrder = asyncHandler(async (req, res) => {
             orderNumber,
             customer: req.customer._id,
             items: orderItems,
+
             shippingAddress: addressSnapshot(address),
-            subtotal: Math.round(subtotal * 100) / 100,
+            billingAddress: billingAddress
+              ? addressSnapshot(billingAddress)
+              : null,
+
+            subtotal,
             discount,
+            gstTotal,
             shippingFee,
             tax,
             total,
+
             coupon: coupon?._id || null,
             couponCode: normalizedCode,
             currency: process.env.CURRENCY || "INR",
+
             paymentMethod,
             paymentStatus: "pending",
             status: "pending",
             customerNote,
+
             statusHistory: [
               {
                 status: "pending",
@@ -898,23 +1049,20 @@ exports.createOrder = asyncHandler(async (req, res) => {
     await session.endSession();
   }
 
-  // Send order emails immediately only for COD.
-  // Online payment orders will send confirmation, receipt, and admin emails once payment is verified.
+  // 6. COD emails only; online payment emails remain deferred
   if (paymentMethod === "cod") {
     await dispatchOrderEmails([
       {
         label: "Customer confirmation",
-        fn: () => sendOrderConfirmationEmail(created, req.customer),
+        fn: () =>
+          sendOrderConfirmationEmail(created, req.customer),
       },
       {
         label: "Admin order",
-        fn: () => sendNewOrderAdminEmail(created, req.customer),
+        fn: () =>
+          sendNewOrderAdminEmail(created, req.customer),
       },
     ]);
-  } else {
-    console.log(
-      `Order ${created.orderNumber} created with paymentMethod="${paymentMethod}". Deferring order emails until payment succeeds.`
-    );
   }
 
   return res.status(201).json({
@@ -922,6 +1070,289 @@ exports.createOrder = asyncHandler(async (req, res) => {
     order: created,
   });
 });
+
+
+// exports.createOrder = asyncHandler(async (req, res) => {
+//   const {
+//     items,
+//     addressId,
+//     shippingAddress,
+//     paymentMethod = "cod",
+//     customerNote = "",
+//     couponCode,
+//   } = req.body;
+
+//   if (!Array.isArray(items) || !items.length) {
+//     return res.status(400).json({
+//       message: "At least one order item is required.",
+//     });
+//   }
+
+//   let address = shippingAddress;
+
+//   if (addressId) {
+//     address = req.customer.addresses.id(addressId);
+//   }
+
+//   const requiredAddress = [
+//     "fullName",
+//     "phone",
+//     "addressLine1",
+//     "city",
+//     "state",
+//     "postalCode",
+//   ];
+
+//   if (!address || requiredAddress.some((key) => !address[key])) {
+//     return res.status(400).json({
+//       message: "A complete shipping address is required.",
+//     });
+//   }
+
+//   if (!["cod", "online", "upi", "card", "netbanking"].includes(paymentMethod)) {
+//     return res.status(400).json({
+//       message: "Invalid payment method.",
+//     });
+//   }
+
+//   const session = await mongoose.startSession();
+//   let created;
+
+//   try {
+//     await session.withTransaction(async () => {
+//       let subtotal = 0;
+//       const orderItems = [];
+
+//       for (const item of items) {
+//         const qty = Number(item.quantity);
+
+//         if (!Number.isInteger(qty) || qty < 1 || qty > 100) {
+//           throw Object.assign(
+//             new Error("Each quantity must be an integer between 1 and 100."),
+//             { statusCode: 400 }
+//           );
+//         }
+
+//         const product = await Product.findOne({
+//           _id: item.productId,
+//           isActive: true,
+//         }).session(session);
+
+//         if (!product) {
+//           throw Object.assign(
+//             new Error(`Product not found: ${item.productId}`),
+//             { statusCode: 404 }
+//           );
+//         }
+
+//         if (product.stock < qty) {
+//           throw Object.assign(
+//             new Error(
+//               `Insufficient stock for ${product.name}. Available: ${product.stock}`
+//             ),
+//             { statusCode: 409 }
+//           );
+//         }
+
+//         const unitPrice =
+//           product.salePrice != null ? product.salePrice : product.price;
+
+//         const lineTotal = Math.round(unitPrice * qty * 100) / 100;
+//         subtotal += lineTotal;
+
+//         const primary =
+//           product.images.find((image) => image.isPrimary) ||
+//           product.images[0];
+
+//         orderItems.push({
+//           product: product._id,
+//           name: product.name,
+//           slug: product.slug,
+//           sku: product.sku,
+//           image: primary?.url || "",
+//           unitPrice,
+//           quantity: qty,
+//           lineTotal,
+//           variant: item.variant || "",
+//         });
+
+//         product.stock -= qty;
+//         await product.save({ session });
+//       }
+
+//       let discount = 0;
+//       let coupon = null;
+//       let normalizedCode = "";
+
+//       if (couponCode) {
+//         normalizedCode = String(couponCode).trim().toUpperCase();
+
+//         coupon = await Coupon.findOne({
+//           code: normalizedCode,
+//           isActive: true,
+//         }).session(session);
+
+//         if (!coupon) {
+//           throw Object.assign(new Error("Coupon is invalid or inactive."), {
+//             statusCode: 400,
+//           });
+//         }
+
+//         const now = new Date();
+
+//         if (
+//           (coupon.startsAt && now < coupon.startsAt) ||
+//           (coupon.expiresAt && now > coupon.expiresAt)
+//         ) {
+//           throw Object.assign(new Error("Coupon is outside its active dates."), {
+//             statusCode: 400,
+//           });
+//         }
+
+//         if (
+//           coupon.usageLimit != null &&
+//           coupon.usedCount >= coupon.usageLimit
+//         ) {
+//           throw Object.assign(new Error("Coupon usage limit reached."), {
+//             statusCode: 400,
+//           });
+//         }
+
+//         if (subtotal < coupon.minOrderAmount) {
+//           throw Object.assign(
+//             new Error(`Minimum order amount is ${coupon.minOrderAmount}.`),
+//             { statusCode: 400 }
+//           );
+//         }
+
+//         const usage = coupon.usedBy.find(
+//           (entry) => String(entry.customer) === String(req.customer._id)
+//         );
+
+//         if (usage && usage.count >= coupon.perCustomerLimit) {
+//           throw Object.assign(
+//             new Error("You have reached this coupon usage limit."),
+//             { statusCode: 400 }
+//           );
+//         }
+
+//         if (
+//           coupon.applicableProductIds.length &&
+//           !orderItems.some((item) =>
+//             coupon.applicableProductIds.some(
+//               (id) => String(id) === String(item.product)
+//             )
+//           )
+//         ) {
+//           throw Object.assign(
+//             new Error("Coupon does not apply to these products."),
+//             { statusCode: 400 }
+//           );
+//         }
+
+//         discount =
+//           coupon.discountType === "percentage"
+//             ? (subtotal * coupon.discountValue) / 100
+//             : coupon.discountValue;
+
+//         if (coupon.maxDiscount != null) {
+//           discount = Math.min(discount, coupon.maxDiscount);
+//         }
+
+//         discount = Math.min(
+//           Math.round(discount * 100) / 100,
+//           subtotal
+//         );
+
+//         coupon.usedCount += 1;
+
+//         if (usage) {
+//           usage.count += 1;
+//         } else {
+//           coupon.usedBy.push({
+//             customer: req.customer._id,
+//             count: 1,
+//           });
+//         }
+
+//         await coupon.save({ session });
+//       }
+
+//       const shippingFee = Number(process.env.DEFAULT_SHIPPING_FEE || 0);
+//       const tax = 0;
+
+//       const total = Math.max(
+//         0,
+//         Math.round((subtotal - discount + shippingFee + tax) * 100) / 100
+//       );
+
+//       const orderNumber =
+//         `HOV-${Date.now().toString(36).toUpperCase()}-` +
+//         Math.random().toString(36).slice(2, 6).toUpperCase();
+
+//       const docs = await Order.create(
+//         [
+//           {
+//             orderNumber,
+//             customer: req.customer._id,
+//             items: orderItems,
+//             shippingAddress: addressSnapshot(address),
+//             subtotal: Math.round(subtotal * 100) / 100,
+//             discount,
+//             shippingFee,
+//             tax,
+//             total,
+//             coupon: coupon?._id || null,
+//             couponCode: normalizedCode,
+//             currency: process.env.CURRENCY || "INR",
+//             paymentMethod,
+//             paymentStatus: "pending",
+//             status: "pending",
+//             customerNote,
+//             statusHistory: [
+//               {
+//                 status: "pending",
+//                 note:
+//                   paymentMethod === "cod"
+//                     ? "Order created by customer (COD)"
+//                     : "Order created, awaiting online payment",
+//               },
+//             ],
+//           },
+//         ],
+//         { session }
+//       );
+
+//       created = docs[0];
+//     });
+//   } finally {
+//     await session.endSession();
+//   }
+
+//   // Send order emails immediately only for COD.
+//   // Online payment orders will send confirmation, receipt, and admin emails once payment is verified.
+//   if (paymentMethod === "cod") {
+//     await dispatchOrderEmails([
+//       {
+//         label: "Customer confirmation",
+//         fn: () => sendOrderConfirmationEmail(created, req.customer),
+//       },
+//       {
+//         label: "Admin order",
+//         fn: () => sendNewOrderAdminEmail(created, req.customer),
+//       },
+//     ]);
+//   } else {
+//     console.log(
+//       `Order ${created.orderNumber} created with paymentMethod="${paymentMethod}". Deferring order emails until payment succeeds.`
+//     );
+//   }
+
+//   return res.status(201).json({
+//     message: "Order created successfully.",
+//     order: created,
+//   });
+// });
 
 
 exports.confirmPaidOrderAndNotify = async function confirmPaidOrderAndNotify(
