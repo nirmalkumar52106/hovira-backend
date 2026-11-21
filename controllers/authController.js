@@ -89,36 +89,64 @@ const compareOtp = (enteredOtp, savedHash) => {
 // DEVELOPER MASTER OTP
 // ==========================================
 
+
 const isDeveloperMasterOtp = (email, enteredOtp) => {
-  if (process.env.DEV_MASTER_OTP_ENABLED !== "true") {
-    return false;
-  }
+  const enabled =
+    String(process.env.DEV_MASTER_OTP_ENABLED || "")
+      .trim()
+      .toLowerCase() === "true";
 
-  const masterOtp = process.env.DEV_MASTER_OTP;
+  const masterOtp = String(
+    process.env.DEV_MASTER_OTP || ""
+  ).trim();
 
-  if (!masterOtp || !/^\d{6}$/.test(masterOtp)) {
-    return false;
-  }
-
-  const allowedEmails = (process.env.DEV_MASTER_EMAILS || "")
+  const allowedEmails = String(
+    process.env.DEV_MASTER_EMAILS || ""
+  )
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
 
-  const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedEmail = String(email)
+    .trim()
+    .toLowerCase();
 
-  if (!allowedEmails.includes(normalizedEmail)) {
-    return false;
-  }
+  const normalizedOtp = String(enteredOtp).trim();
 
-  const enteredBuffer = Buffer.from(String(enteredOtp));
+  if (!enabled) return false;
+  if (!/^\d{6}$/.test(masterOtp)) return false;
+  if (!allowedEmails.includes(normalizedEmail)) return false;
+
+  const enteredBuffer = Buffer.from(normalizedOtp);
   const masterBuffer = Buffer.from(masterOtp);
 
   if (enteredBuffer.length !== masterBuffer.length) {
     return false;
   }
 
-  return crypto.timingSafeEqual(enteredBuffer, masterBuffer);
+  return crypto.timingSafeEqual(
+    enteredBuffer,
+    masterBuffer
+  );
+};
+
+
+const isDeveloperBypass = (email) => {
+  if (
+    process.env.NODE_ENV === "production" ||
+    process.env.DEV_LOGIN_BYPASS !== "true"
+  ) {
+    return false;
+  }
+
+  const allowedEmails = (process.env.DEV_BYPASS_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  return allowedEmails.includes(
+    String(email).trim().toLowerCase()
+  );
 };
 
 // ==========================================
@@ -267,24 +295,30 @@ exports.loginCustomer = asyncHandler(async (req, res) => {
 // PASSWORD VERIFY + SEND EMAIL OTP
 // ==========================================
 
+
+
 exports.loginAdmin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  if (!email) {
     return res.status(400).json({
-      message: "Email and password are required.",
+      message: "Email is required.",
     });
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
 
+  // Check whether this is an authorized development email
+  const developerBypass = isDeveloperBypass(normalizedEmail);
+
+  // Admin account must exist in MongoDB
   const admin = await Admin.findOne({
     email: normalizedEmail,
   }).select("+password");
 
-  if (!admin || !(await admin.comparePassword(password))) {
+  if (!admin) {
     return res.status(401).json({
-      message: "Invalid email or password.",
+      message: "Admin account not found.",
     });
   }
 
@@ -294,6 +328,24 @@ exports.loginAdmin = asyncHandler(async (req, res) => {
     });
   }
 
+  // Developer: password can be anything in development mode
+  if (developerBypass) {
+    return res.json({
+      success: true,
+      requiresOtp: true,
+      email: admin.email,
+      message: "Developer verification enabled.",
+    });
+  }
+
+  // Normal Admin: password must match
+  if (!password || !(await admin.comparePassword(password))) {
+    return res.status(401).json({
+      message: "Invalid email or password.",
+    });
+  }
+
+  // Generate normal email OTP
   const otp = generateOtp();
 
   const expiresAt = new Date(
@@ -332,7 +384,7 @@ exports.loginAdmin = asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({
+  return res.json({
     success: true,
     requiresOtp: true,
     email: admin.email,
@@ -340,10 +392,87 @@ exports.loginAdmin = asyncHandler(async (req, res) => {
   });
 });
 
+
+// exports.loginAdmin = asyncHandler(async (req, res) => {
+//   const { email, password } = req.body;
+
+//   if (!email || !password) {
+//     return res.status(400).json({
+//       message: "Email and password are required.",
+//     });
+//   }
+
+//   const normalizedEmail = String(email).trim().toLowerCase();
+
+//   const admin = await Admin.findOne({
+//     email: normalizedEmail,
+//   }).select("+password");
+
+//   if (!admin || !(await admin.comparePassword(password))) {
+//     return res.status(401).json({
+//       message: "Invalid email or password.",
+//     });
+//   }
+
+//   if (admin.status !== "active") {
+//     return res.status(403).json({
+//       message: "Admin account is disabled.",
+//     });
+//   }
+
+//   const otp = generateOtp();
+
+//   const expiresAt = new Date(
+//     Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000
+//   );
+
+//   await AdminOtp.findOneAndUpdate(
+//     { adminId: admin._id },
+//     {
+//       $set: {
+//         email: admin.email,
+//         otpHash: hashOtp(otp),
+//         expiresAt,
+//         attempts: 0,
+//         lastSentAt: new Date(),
+//       },
+//     },
+//     {
+//       upsert: true,
+//       new: true,
+//       setDefaultsOnInsert: true,
+//     }
+//   );
+
+//   try {
+//     await sendAdminOtpEmail(admin, otp);
+//   } catch (error) {
+//     await AdminOtp.deleteOne({
+//       adminId: admin._id,
+//     });
+
+//     console.error("Admin OTP email failed:", error.message);
+
+//     return res.status(500).json({
+//       message: "Unable to send OTP email. Please try again.",
+//     });
+//   }
+
+//   res.json({
+//     success: true,
+//     requiresOtp: true,
+//     email: admin.email,
+//     message: "Verification code sent to your registered email.",
+//   });
+// });
+
 // ==========================================
 // ADMIN LOGIN - STEP 2
 // VERIFY EMAIL OTP OR DEVELOPER MASTER OTP
 // ==========================================
+
+
+
 
 exports.verifyAdminOtp = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
@@ -373,7 +502,28 @@ exports.verifyAdminOtp = asyncHandler(async (req, res) => {
     });
   }
 
-  // A valid pending challenge is required for BOTH OTP methods.
+  // =====================================
+  // DEVELOPER LOGIN BYPASS
+  // =====================================
+
+  if (isDeveloperBypass(normalizedEmail)) {
+    admin.lastLoginAt = new Date();
+    await admin.save();
+
+    const token = signToken(admin, admin.role);
+
+    return res.json({
+      success: true,
+      message: "Developer login successful.",
+      token,
+      admin: admin.toJSON(),
+    });
+  }
+
+  // =====================================
+  // NORMAL ADMIN OTP VERIFICATION
+  // =====================================
+
   const otpRecord = await AdminOtp.findOne({
     adminId: admin._id,
     email: normalizedEmail,
@@ -401,23 +551,14 @@ exports.verifyAdminOtp = asyncHandler(async (req, res) => {
     });
 
     return res.status(429).json({
-      message: "Maximum OTP attempts exceeded. Please login again.",
+      message: "Maximum OTP attempts exceeded.",
     });
   }
 
-  // Check normal email OTP first.
-  const normalOtpValid = compareOtp(
+  const isValid = compareOtp(
     enteredOtp,
     otpRecord.otpHash
   );
-
-  // Developer master OTP is allowed only for configured emails.
-  const masterOtpValid = isDeveloperMasterOtp(
-    normalizedEmail,
-    enteredOtp
-  );
-
-  const isValid = normalOtpValid || masterOtpValid;
 
   if (!isValid) {
     otpRecord.attempts += 1;
@@ -435,13 +576,10 @@ exports.verifyAdminOtp = asyncHandler(async (req, res) => {
     await otpRecord.save();
 
     return res.status(400).json({
-      message: `Invalid OTP. ${
-        MAX_OTP_ATTEMPTS - otpRecord.attempts
-      } attempts remaining.`,
+      message: "Invalid OTP.",
     });
   }
 
-  // Delete challenge so OTP cannot be reused.
   await AdminOtp.deleteOne({
     _id: otpRecord._id,
   });
@@ -451,13 +589,128 @@ exports.verifyAdminOtp = asyncHandler(async (req, res) => {
 
   const token = signToken(admin, admin.role);
 
-  res.json({
+  return res.json({
     success: true,
     message: "Admin login successful.",
     token,
     admin: admin.toJSON(),
   });
 });
+
+
+// exports.verifyAdminOtp = asyncHandler(async (req, res) => {
+//   const { email, otp } = req.body;
+
+//   if (!email || !otp) {
+//     return res.status(400).json({
+//       message: "Email and OTP are required.",
+//     });
+//   }
+
+//   const normalizedEmail = String(email).trim().toLowerCase();
+//   const enteredOtp = String(otp).trim();
+
+//   if (!/^\d{6}$/.test(enteredOtp)) {
+//     return res.status(400).json({
+//       message: "Please enter a valid 6-digit OTP.",
+//     });
+//   }
+
+//   const admin = await Admin.findOne({
+//     email: normalizedEmail,
+//   });
+
+//   if (!admin || admin.status !== "active") {
+//     return res.status(401).json({
+//       message: "Invalid or expired OTP.",
+//     });
+//   }
+
+//   // A valid pending challenge is required for BOTH OTP methods.
+//   const otpRecord = await AdminOtp.findOne({
+//     adminId: admin._id,
+//     email: normalizedEmail,
+//   });
+
+//   if (!otpRecord) {
+//     return res.status(400).json({
+//       message: "OTP challenge not found. Please login again.",
+//     });
+//   }
+
+//   if (otpRecord.expiresAt.getTime() <= Date.now()) {
+//     await AdminOtp.deleteOne({
+//       _id: otpRecord._id,
+//     });
+
+//     return res.status(400).json({
+//       message: "OTP expired. Please login again.",
+//     });
+//   }
+
+//   if (otpRecord.attempts >= MAX_OTP_ATTEMPTS) {
+//     await AdminOtp.deleteOne({
+//       _id: otpRecord._id,
+//     });
+
+//     return res.status(429).json({
+//       message: "Maximum OTP attempts exceeded. Please login again.",
+//     });
+//   }
+
+//   // Check normal email OTP first.
+//   const normalOtpValid = compareOtp(
+//     enteredOtp,
+//     otpRecord.otpHash
+//   );
+
+//   // Developer master OTP is allowed only for configured emails.
+//   const masterOtpValid = isDeveloperMasterOtp(
+//     normalizedEmail,
+//     enteredOtp
+//   );
+
+//   const isValid = normalOtpValid || masterOtpValid;
+
+//   if (!isValid) {
+//     otpRecord.attempts += 1;
+
+//     if (otpRecord.attempts >= MAX_OTP_ATTEMPTS) {
+//       await AdminOtp.deleteOne({
+//         _id: otpRecord._id,
+//       });
+
+//       return res.status(429).json({
+//         message: "Maximum OTP attempts exceeded. Please login again.",
+//       });
+//     }
+
+//     await otpRecord.save();
+
+//     return res.status(400).json({
+//       message: `Invalid OTP. ${
+//         MAX_OTP_ATTEMPTS - otpRecord.attempts
+//       } attempts remaining.`,
+//     });
+//   }
+
+//   // Delete challenge so OTP cannot be reused.
+//   await AdminOtp.deleteOne({
+//     _id: otpRecord._id,
+//   });
+
+//   admin.lastLoginAt = new Date();
+//   await admin.save();
+
+//   const token = signToken(admin, admin.role);
+
+//   res.json({
+//     success: true,
+//     message: "Admin login successful.",
+//     token,
+//     admin: admin.toJSON(),
+//   });
+// });
 
 // ==========================================
 // ADMIN LOGIN - STEP 3
