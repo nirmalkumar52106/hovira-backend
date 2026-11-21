@@ -11,3 +11,4 @@ router.get('/users', protectSuperAdmin, c.listAdmins);
  router.post('/users', protectSuperAdmin, c.createAdmin); 
  router.patch('/users/:id', protectSuperAdmin, requireObjectId('id'), c.updateAdmin);
 module.exports = router;
+ 

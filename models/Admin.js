@@ -14,3 +14,4 @@ adminSchema.pre('save', async function () { if (this.isModified('password')) thi
 adminSchema.methods.comparePassword = function (candidate) { return bcrypt.compare(candidate, this.password); };
 adminSchema.set('toJSON', { transform: (doc, ret) => { delete ret.password; delete ret.__v; return ret; } });
 module.exports = mongoose.model('Admin', adminSchema);
+ 
