@@ -26,7 +26,7 @@ const origins = [
   "https://www.hoviraskincare.com",
   "https://radiant-kelpie-26709c.netlify.app",
   "https://adminhovira.netlify.app",
-  "https://admin.hoviraskincare.com/"
+  "https://admin.hoviraskincare.com"
 ];
 
 const corsOptions = {
