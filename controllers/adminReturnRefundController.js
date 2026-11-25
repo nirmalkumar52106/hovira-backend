@@ -121,7 +121,7 @@ exports.adminGetReturnRequest = async (req, res) => {
       .populate("reviewedBy", "name email")
       .populate("refund.approvedBy", "name email")
       .populate("inspection.inspectedBy", "name email")
-      .populate("pickup.assignedTo", "name email mobile");
+    
 
     if (!request) {
       return fail(res, 404, "Return request not found.");
