@@ -123,6 +123,7 @@ app.use(
 app.use("/api/payments", require("./routes/paymentRoutes"));
 app.use("/api/webhooks", require("./routes/webhookRoutes"));
 app.use("/api/blogs", require("./routes/blogRoutes"));
+app.use("/api/returns",  require("./routes/returnRoutes"));
 
 app.use(notFound);
 app.use(errorHandler);
