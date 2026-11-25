@@ -125,6 +125,9 @@ app.use("/api/webhooks", require("./routes/webhookRoutes"));
 app.use("/api/blogs", require("./routes/blogRoutes"));
 app.use("/api/returns",  require("./routes/returnRoutes"));
 
+
+app.use("/api/returns/admin", require("./routes/adminReturnRefundRoutes"));
+
 app.use(notFound);
 app.use(errorHandler);
 

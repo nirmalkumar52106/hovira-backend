@@ -15,7 +15,7 @@ const razorpay = new Razorpay({
 exports.createRazorpayOrder = asyncHandler(async (req, res) => {
   const { orderId } = req.body;
 
-  if (!orderId) {
+  if (!orderId) { 
     return res.status(400).json({ message: "Order ID is required." });
   }
 

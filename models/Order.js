@@ -22,7 +22,19 @@ const orderSchema = new mongoose.Schema({
   coupon: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null }, couponCode: { type: String, default: '' }, currency: { type: String, default: 'INR' },
   status: { type: String, enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'], default: 'pending', index: true },
   paymentMethod: { type: String, enum: ['cod', 'online', 'upi', 'card', 'netbanking'], default: 'cod' },
-  paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'], default: 'pending', index: true },
+  paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded', 'partially_refunded'],
+     default: 'pending', index: true },
+     refundedAmount: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
+
+refundsReservedAmount: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
   paymentReference: { type: String, default: '' },
   razorpayOrderId: {
     type: String,
